@@ -1,8 +1,8 @@
-import {ChildProcess, spawn} from 'child_process';
-import {randomBytes} from 'crypto';
-import {readFileSync} from 'fs';
-import {EventEmitter} from 'events';
-import {parse as urlParser} from 'url';
+import { ChildProcess, spawn } from 'child_process';
+import { randomBytes } from 'crypto';
+import { readFileSync } from 'fs';
+import { EventEmitter } from 'events';
+import { parse as urlParser } from 'url';
 
 // Typings are not available
 const StreamJsonObjects = require('stream-json/utils/StreamJsonObjects');
@@ -108,35 +108,48 @@ export interface SideloadConfig {
     graphqlPort?: number,
     dumpTraffic?: boolean,
     startupTimeout?: number,
-    origin?: OriginParams
-    frontend?: FrontendParams
+    origin?: OriginParams,
+    frontend?: FrontendParams,
+    singleProxy?: boolean,
 }
 
 export class Engine extends EventEmitter {
     private child: ChildProcess | null;
     private graphqlPort: number;
     private binary: string;
-    private config: string | EngineConfig;
+    private engineConfig: string | EngineConfig;
     private middlewareParams: MiddlewareParams;
-    private running: Boolean;
+    private running: boolean;
     private startupTimeout: number;
     private originParams: OriginParams;
     private frontendParams: FrontendParams;
+    private singleProxy: boolean;
 
-    public constructor(config: SideloadConfig) {
+    public constructor(sideloadConfig: SideloadConfig) {
         super();
         this.running = false;
-        this.startupTimeout = config.startupTimeout || 1000;
+        this.startupTimeout = sideloadConfig.startupTimeout || 1000;
+
+        // Middleware configuration for double proxy
         this.middlewareParams = new MiddlewareParams();
-        this.middlewareParams.endpoint = config.endpoint || '/graphql';
+        this.middlewareParams.endpoint = sideloadConfig.endpoint || '/graphql';
         this.middlewareParams.psk = randomBytes(48).toString("hex");
-        this.middlewareParams.dumpTraffic = config.dumpTraffic || false;
-        this.originParams = config.origin || {};
-        this.frontendParams = config.frontend || {};
-        if (config.graphqlPort) {
-            this.graphqlPort = config.graphqlPort;
+        this.middlewareParams.dumpTraffic = sideloadConfig.dumpTraffic || false;
+
+        this.originParams = sideloadConfig.origin || {};
+        this.frontendParams = sideloadConfig.frontend || {};
+
+        // If we are single proxying validate that we have required origin and frontend options
+        this.singleProxy = sideloadConfig.singleProxy || false;
+        if (this.singleProxy) {
+
+        }
+
+        // Handle graphqlPort differently when single proxying
+        if (sideloadConfig.graphqlPort) {
+            this.graphqlPort = sideloadConfig.graphqlPort;
         } else {
-            const port : any = process.env.PORT;
+            const port: any = process.env.PORT;
             if (isFinite(port)) {
                 this.graphqlPort = parseInt(port, 10);
             } else {
@@ -147,7 +160,9 @@ export class Engine extends EventEmitter {
                     `should make sure to add e.g. 'graphqlPort: 1234' wherever you call new Engine(...).`);
             }
         }
-        this.config = config.engineConfig;
+
+        this.engineConfig = sideloadConfig.engineConfig;
+
         switch (process.platform) {
             case 'darwin': {
                 this.binary = require.resolve('apollo-engine-binary-darwin/engineproxy_darwin_amd64');
@@ -172,7 +187,7 @@ export class Engine extends EventEmitter {
             throw new Error('Only call start() on an engine object once');
         }
         this.running = true;
-        let config = this.config;
+        let config = this.engineConfig;
         const endpoint = this.middlewareParams.endpoint;
         const graphqlPort = this.graphqlPort;
 
@@ -278,7 +293,7 @@ export class Engine extends EventEmitter {
 
                 // Print log message:
                 if (!logLevelFilter || !logRecord.level || logRecord.level.match(logLevelFilter)) {
-                    console.log({proxy: logRecord});
+                    console.log({ proxy: logRecord });
                 }
             });
 
