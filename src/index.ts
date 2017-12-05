@@ -1,8 +1,8 @@
-import {ChildProcess, spawn} from 'child_process';
-import {randomBytes} from 'crypto';
-import {readFileSync} from 'fs';
-import {EventEmitter} from 'events';
-import {parse as urlParser} from 'url';
+import { ChildProcess, spawn } from 'child_process';
+import { randomBytes } from 'crypto';
+import { readFileSync } from 'fs';
+import { EventEmitter } from 'events';
+import { parse as urlParser } from 'url';
 
 // Typings are not available
 const StreamJsonObjects = require('stream-json/utils/StreamJsonObjects');
@@ -108,35 +108,46 @@ export interface SideloadConfig {
     graphqlPort?: number,
     dumpTraffic?: boolean,
     startupTimeout?: number,
-    origin?: OriginParams
-    frontend?: FrontendParams
+    origin?: OriginParams,
+    frontend?: FrontendParams,
 }
 
 export class Engine extends EventEmitter {
     private child: ChildProcess | null;
     private graphqlPort: number;
     private binary: string;
-    private config: string | EngineConfig;
+    private engineConfig: EngineConfig;
     private middlewareParams: MiddlewareParams;
-    private running: Boolean;
+    private running: boolean;
     private startupTimeout: number;
     private originParams: OriginParams;
     private frontendParams: FrontendParams;
 
-    public constructor(config: SideloadConfig) {
+    public constructor(sideloadConfig: SideloadConfig) {
         super();
         this.running = false;
-        this.startupTimeout = config.startupTimeout || 1000;
+        this.startupTimeout = sideloadConfig.startupTimeout || 1000;
+
+        // Ensure that engineConfig is EngineConfig and not string
+        let sourceConfig = sideloadConfig.engineConfig
+        if (typeof sourceConfig === 'string') {
+            sourceConfig = JSON.parse(readFileSync(sourceConfig as string, 'utf8') as string);
+        }
+        this.engineConfig = Object.assign({}, sourceConfig as EngineConfig);
+
+        // Middleware configuration for double proxy
         this.middlewareParams = new MiddlewareParams();
-        this.middlewareParams.endpoint = config.endpoint || '/graphql';
+        this.middlewareParams.endpoint = sideloadConfig.endpoint || '/graphql';
         this.middlewareParams.psk = randomBytes(48).toString("hex");
-        this.middlewareParams.dumpTraffic = config.dumpTraffic || false;
-        this.originParams = config.origin || {};
-        this.frontendParams = config.frontend || {};
-        if (config.graphqlPort) {
-            this.graphqlPort = config.graphqlPort;
+        this.middlewareParams.dumpTraffic = sideloadConfig.dumpTraffic || false;
+
+        this.originParams = sideloadConfig.origin || {};
+        this.frontendParams = sideloadConfig.frontend || {};
+
+        if (sideloadConfig.graphqlPort) {
+            this.graphqlPort = sideloadConfig.graphqlPort;
         } else {
-            const port : any = process.env.PORT;
+            const port: any = process.env.PORT;
             if (isFinite(port)) {
                 this.graphqlPort = parseInt(port, 10);
             } else {
@@ -147,7 +158,53 @@ export class Engine extends EventEmitter {
                     `should make sure to add e.g. 'graphqlPort: 1234' wherever you call new Engine(...).`);
             }
         }
-        this.config = config.engineConfig;
+
+        // Inject frontend, that we will route
+        const frontend = Object.assign({}, this.frontendParams, {
+            host: '127.0.0.1',
+            endpoint: this.middlewareParams.endpoint,
+            port: 0,
+        });
+        if (typeof this.engineConfig.frontends === 'undefined') {
+            this.engineConfig.frontends = [frontend];
+        } else {
+            this.engineConfig.frontends.push(frontend);
+        }
+
+        if (typeof this.engineConfig.origins === 'undefined') {
+            const origin = Object.assign({}, this.originParams, {
+                http: {
+                    url: 'http://127.0.0.1:' + this.graphqlPort + this.middlewareParams.endpoint,
+                    headerSecret: this.middlewareParams.psk
+                },
+            });
+            this.engineConfig.origins = [origin];
+        } else {
+            // Extend any existing HTTP origins with the chosen PSK:
+            // (trust it to fill other fields correctly)
+            this.engineConfig.origins.forEach(origin => {
+                if (typeof origin.http === 'object') {
+                    Object.assign(origin.http, {
+                        headerSecret: this.middlewareParams.psk,
+                    });
+                }
+            });
+        }
+
+        // Logging format _must_ be JSON to stdout
+        if (!this.engineConfig.logging) {
+            this.engineConfig.logging = {}
+        } else {
+            if (this.engineConfig.logging.format && this.engineConfig.logging.format !== 'JSON') {
+                console.error(`Invalid logging format: ${this.engineConfig.logging.format}, overridden to JSON.`);
+            }
+            if (this.engineConfig.logging.destination && this.engineConfig.logging.destination !== 'STDOUT') {
+                console.error(`Invalid logging destination: ${this.engineConfig.logging.format}, overridden to STDOUT.`);
+            }
+        }
+        this.engineConfig.logging.format = 'JSON';
+        this.engineConfig.logging.destination = 'STDOUT';
+
         switch (process.platform) {
             case 'darwin': {
                 this.binary = require.resolve('apollo-engine-binary-darwin/engineproxy_darwin_amd64');
@@ -172,81 +229,25 @@ export class Engine extends EventEmitter {
             throw new Error('Only call start() on an engine object once');
         }
         this.running = true;
-        let config = this.config;
-        const endpoint = this.middlewareParams.endpoint;
-        const graphqlPort = this.graphqlPort;
-
-        if (typeof config === 'string') {
-            config = JSON.parse(readFileSync(config as string, 'utf8') as string);
-        }
-
-        // Customize configuration:
-        const childConfig = Object.assign({}, config as EngineConfig);
-
-        // Logging format _must_ be JSON to stdout
-        if (!childConfig.logging) {
-            childConfig.logging = {}
-        } else {
-            if (childConfig.logging.format && childConfig.logging.format !== 'JSON') {
-                console.error(`Invalid logging format: ${childConfig.logging.format}, overridden to JSON.`);
-            }
-            if (childConfig.logging.destination && childConfig.logging.destination !== 'STDOUT') {
-                console.error(`Invalid logging destination: ${childConfig.logging.format}, overridden to STDOUT.`);
-            }
-        }
-        childConfig.logging.format = 'JSON';
-        childConfig.logging.destination = 'STDOUT';
-
-        // Inject frontend, that we will route
-        const frontend = Object.assign({}, this.frontendParams, {
-            host: '127.0.0.1',
-            endpoint,
-            port: 0,
-        });
-        if (typeof childConfig.frontends === 'undefined') {
-            childConfig.frontends = [frontend];
-        } else {
-            childConfig.frontends.push(frontend);
-        }
-
-        if (typeof childConfig.origins === 'undefined') {
-            const origin = Object.assign({}, this.originParams, {
-                http: {
-                    url: 'http://127.0.0.1:' + graphqlPort + endpoint,
-                    headerSecret: this.middlewareParams.psk
-                },
-            });
-            childConfig.origins = [origin];
-        } else {
-            // Extend any existing HTTP origins with the chosen PSK:
-            // (trust it to fill other fields correctly)
-            childConfig.origins.forEach(origin => {
-                if (typeof origin.http === 'object') {
-                    Object.assign(origin.http, {
-                        headerSecret: this.middlewareParams.psk,
-                    });
-                }
-            });
-        }
 
         const spawnChild = () => {
             // If logging >INFO, still log at info, then filter in node:
             // This is because startup notifications are at INFO level.
             let logLevelFilter: any;
-            const logLevel = childConfig.logging!.level;
+            const logLevel = this.engineConfig.logging!.level;
             if (logLevel) {
                 if (logLevel.match(/^warn(ing)?$/i)) {
-                    childConfig.logging!.level = 'info';
+                    this.engineConfig.logging!.level = 'info';
                     logLevelFilter = /^(warn(ing)?|error|fatal)$/;
                 } else if (logLevel.match(/^error$/i)) {
-                    childConfig.logging!.level = 'info';
+                    this.engineConfig.logging!.level = 'info';
                     logLevelFilter = /^(error|fatal)$/;
                 } else if (logLevel.match(/^fatal$/i)) {
-                    childConfig.logging!.level = 'info';
+                    this.engineConfig.logging!.level = 'info';
                     logLevelFilter = /^fatal$/;
                 }
             }
-            let childConfigJson = JSON.stringify(childConfig) + '\n';
+            let childConfigJson = JSON.stringify(this.engineConfig) + '\n';
 
             const child = spawn(this.binary, ['-config=stdin']);
             this.child = child;
@@ -265,8 +266,8 @@ export class Engine extends EventEmitter {
 
                     // If we hacked the log level, revert:
                     if (logLevelFilter) {
-                        childConfig.logging!.level = logLevel;
-                        childConfigJson = JSON.stringify(childConfig) + '\n';
+                        this.engineConfig.logging!.level = logLevel;
+                        childConfigJson = JSON.stringify(this.engineConfig) + '\n';
                         child.stdin.write(childConfigJson);
 
                         // Remove the filter after the child has had plenty of time to reload the config:
@@ -278,7 +279,7 @@ export class Engine extends EventEmitter {
 
                 // Print log message:
                 if (!logLevelFilter || !logRecord.level || logRecord.level.match(logLevelFilter)) {
-                    console.log({proxy: logRecord});
+                    console.log({ proxy: logRecord });
                 }
             });
 
