@@ -5,7 +5,7 @@ import { EventEmitter } from 'events';
 import { parse as urlParser } from 'url';
 
 // Typings are not available
-const StreamJsonObjects = require('stream-json/utils/StreamJsonObjects');
+import StreamJsonObjects = require('stream-json/utils/StreamJsonObjects');
 
 import {
     MiddlewareParams,
