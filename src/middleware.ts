@@ -1,8 +1,8 @@
-import {Request, Response, NextFunction} from 'express'
-import {Context} from 'koa'
-import {Server} from 'hapi'
+import { Request, Response, NextFunction } from 'express'
+import { Context } from 'koa'
+import { Server } from 'hapi'
 import * as request from 'request'
-import {IncomingMessage, ServerResponse} from 'http';
+import { IncomingMessage, ServerResponse } from 'http';
 import { parse as urlParser } from 'url';
 
 export class MiddlewareParams {
@@ -13,7 +13,7 @@ export class MiddlewareParams {
 }
 
 export function makeMicroMiddleware(params: MiddlewareParams) {
-    return function(fn: Function) {
+    return function (fn: Function) {
         return function (req: IncomingMessage, res: ServerResponse) {
             const { pathname } = urlParser(req.url || '');
             if (!params.uri || pathname !== params.endpoint) return fn(req, res);
@@ -56,13 +56,13 @@ export function makeKoaMiddleware(params: MiddlewareParams) {
         else if (ctx.req.headers['x-engine-from'] === params.psk) return next();
         else if (ctx.req.method !== 'GET' && ctx.req.method !== 'POST') return next();
         else return new Promise((resolve) => {
-                ctx.req.pipe(request(params.uri + ctx.originalUrl, (error, response, body) => {
-                    if (response.statusCode) ctx.response.status = response.statusCode;
-                    ctx.response.set(JSON.parse(JSON.stringify(response.headers)));
-                    ctx.response.body = body;
-                    resolve();
-                }));
-            });
+            ctx.req.pipe(request(params.uri + ctx.originalUrl, (error, response, body) => {
+                if (response.statusCode) ctx.response.status = response.statusCode;
+                ctx.response.set(JSON.parse(JSON.stringify(response.headers)));
+                ctx.response.body = body;
+                resolve();
+            }));
+        });
     }
 }
 

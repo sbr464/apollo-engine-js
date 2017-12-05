@@ -1,16 +1,16 @@
 const http = require('http');
 const express = require('express');
-const {graphqlExpress} = require('apollo-server-express');
+const { graphqlExpress } = require('apollo-server-express');
 const bodyParser = require('body-parser');
-const {createServer} = require('net');
+const { createServer } = require('net');
 
-const {assert} = require('chai');
+const { assert } = require('chai');
 const isRunning = require('is-running');
 
-const {Engine} = require('../lib/index');
+const { Engine } = require('../lib/index');
 
-const {schema, rootValue, verifyEndpointSuccess} = require('./schema');
-const {testEngine} = require('./test');
+const { schema, rootValue, verifyEndpointSuccess } = require('./schema');
+const { testEngine } = require('./test');
 
 describe('engine', () => {
   let app, engine = null;
@@ -31,7 +31,7 @@ describe('engine', () => {
   function gqlServer(path) {
     path = path || '/graphql';
     app.get(`${path}/ping`, (req, res) => {
-      res.json({'pong': true});
+      res.json({ 'pong': true });
     });
 
     app.use(path, bodyParser.json(), graphqlExpress({

@@ -1,8 +1,8 @@
-import {ChildProcess, spawn} from 'child_process';
-import {randomBytes} from 'crypto';
-import {readFileSync} from 'fs';
-import {EventEmitter} from 'events';
-import {parse as urlParser} from 'url';
+import { ChildProcess, spawn } from 'child_process';
+import { randomBytes } from 'crypto';
+import { readFileSync } from 'fs';
+import { EventEmitter } from 'events';
+import { parse as urlParser } from 'url';
 
 // Typings are not available
 const StreamJsonObjects = require('stream-json/utils/StreamJsonObjects');
@@ -115,8 +115,8 @@ export interface SideloadConfig {
     // Milliseconds to wait for the proxy binary to start; set to <=0 to wait forever.
     // If not set, defaults to 5000ms.
     startupTimeout?: number,
-    origin?: OriginParams
-    frontend?: FrontendParams
+    origin?: OriginParams,
+    frontend?: FrontendParams,
 }
 
 export class Engine extends EventEmitter {
@@ -125,7 +125,7 @@ export class Engine extends EventEmitter {
     private binary: string;
     private config: string | EngineConfig;
     private middlewareParams: MiddlewareParams;
-    private running: Boolean;
+    private running: boolean;
     private startupTimeout: number;
     private originParams: OriginParams;
     private frontendParams: FrontendParams;
@@ -289,7 +289,7 @@ export class Engine extends EventEmitter {
 
                 // Print log message:
                 if (!logLevelFilter || !logRecord.level || logRecord.level.match(logLevelFilter)) {
-                    console.log({proxy: logRecord});
+                    console.log({ proxy: logRecord });
                 }
             });
 
@@ -331,7 +331,7 @@ export class Engine extends EventEmitter {
         spawnChild();
 
         return new Promise((resolve, reject) => {
-            let cancelTimeout : NodeJS.Timer;
+            let cancelTimeout: NodeJS.Timer;
             if (this.startupTimeout > 0) {
                 cancelTimeout = setTimeout(() => {
                     this.running = false;
