@@ -1,4 +1,4 @@
-const {Engine} = require('../lib/index');
+const { Engine } = require('../lib/index');
 
 exports.testEngine = (path) => {
   path = path || '/graphql';

@@ -117,6 +117,8 @@ export interface SideloadConfig {
     startupTimeout?: number,
     origin?: OriginParams,
     frontend?: FrontendParams,
+    singleProxy?: boolean,
+    backendPort?: number,
 }
 
 export class Engine extends EventEmitter {
@@ -129,6 +131,8 @@ export class Engine extends EventEmitter {
     private startupTimeout: number;
     private originParams: OriginParams;
     private frontendParams: FrontendParams;
+    private singleProxy: boolean;
+    private backendPort: number;
 
     public constructor(config: SideloadConfig) {
         super();
@@ -158,6 +162,15 @@ export class Engine extends EventEmitter {
                     `should make sure to add e.g. 'graphqlPort: 1234' wherever you call new Engine(...).`);
             }
         }
+        if (config.singleProxy) {
+            this.singleProxy = config.singleProxy
+        }
+        if (config.backendPort) {
+            this.backendPort = config.backendPort
+        } else if (this.singleProxy) {
+            throw new Error('You must set backendPort if setting singleProxy')
+        }
+
         this.config = config.engineConfig;
         switch (process.platform) {
             case 'darwin': {
@@ -186,6 +199,7 @@ export class Engine extends EventEmitter {
         let config = this.config;
         const endpoint = this.middlewareParams.endpoint;
         const graphqlPort = this.graphqlPort;
+        const backendPort = this.backendPort;
 
         if (typeof config === 'string') {
             config = JSON.parse(readFileSync(config as string, 'utf8') as string);
@@ -209,35 +223,59 @@ export class Engine extends EventEmitter {
         childConfig.logging.destination = 'STDOUT';
 
         // Inject frontend, that we will route
-        const frontend = Object.assign({}, this.frontendParams, {
-            host: '127.0.0.1',
-            endpoint,
-            port: 0,
-        });
-        if (typeof childConfig.frontends === 'undefined') {
-            childConfig.frontends = [frontend];
-        } else {
-            childConfig.frontends.push(frontend);
-        }
+        if (this.singleProxy) {
+            const frontend = Object.assign({}, this.frontendParams, {
+                host: '0.0.0.0',
+                endpoint,
+                port: this.graphqlPort,
+            });
+            if (typeof childConfig.frontends === 'undefined') {
+                childConfig.frontends = [frontend];
+            } else {
+                childConfig.frontends.push(frontend);
+            }
 
-        if (typeof childConfig.origins === 'undefined') {
-            const origin = Object.assign({}, this.originParams, {
-                http: {
-                    url: 'http://127.0.0.1:' + graphqlPort + endpoint,
-                    headerSecret: this.middlewareParams.psk
-                },
-            });
-            childConfig.origins = [origin];
+            if (typeof childConfig.origins === 'undefined') {
+                const origin = Object.assign({}, this.originParams, {
+                    http: {
+                        url: 'http://127.0.0.1:' + backendPort + endpoint,
+                        headerSecret: this.middlewareParams.psk
+                    },
+                });
+                childConfig.origins = [origin];
+            }
         } else {
-            // Extend any existing HTTP origins with the chosen PSK:
-            // (trust it to fill other fields correctly)
-            childConfig.origins.forEach(origin => {
-                if (typeof origin.http === 'object') {
-                    Object.assign(origin.http, {
-                        headerSecret: this.middlewareParams.psk,
-                    });
-                }
+
+            const frontend = Object.assign({}, this.frontendParams, {
+                host: '127.0.0.1',
+                endpoint,
+                port: 0,
             });
+            if (typeof childConfig.frontends === 'undefined') {
+                childConfig.frontends = [frontend];
+            } else {
+                childConfig.frontends.push(frontend);
+            }
+
+            if (typeof childConfig.origins === 'undefined') {
+                const origin = Object.assign({}, this.originParams, {
+                    http: {
+                        url: 'http://127.0.0.1:' + graphqlPort + endpoint,
+                        headerSecret: this.middlewareParams.psk
+                    },
+                });
+                childConfig.origins = [origin];
+            } else {
+                // Extend any existing HTTP origins with the chosen PSK:
+                // (trust it to fill other fields correctly)
+                childConfig.origins.forEach(origin => {
+                    if (typeof origin.http === 'object') {
+                        Object.assign(origin.http, {
+                            headerSecret: this.middlewareParams.psk,
+                        });
+                    }
+                });
+            }
         }
 
         const spawnChild = () => {

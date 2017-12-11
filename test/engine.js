@@ -67,6 +67,23 @@ describe('engine', () => {
       return verifyEndpointSuccess(`http://localhost:${port}/graphql`, false);
     });
 
+    it('can be configured in singleProxy mode', async () => {
+      engine = new Engine({
+        endpoint: '/graphql',
+        engineConfig: 'test/engine.json',
+        graphqlPort: 3000,
+        singleProxy: true,
+        backendPort: 1,
+      });
+
+      // When using singleProxy the middleware is not required
+      let port = gqlServer('/graphql');
+      engine.backendPort = port;
+
+      await engine.start();
+      return verifyEndpointSuccess(`http://localhost:3000/graphql`, false);
+    });
+
     it('appends configuration', (done) => {
       // Grab a random port locally:
       const srv = createServer();
